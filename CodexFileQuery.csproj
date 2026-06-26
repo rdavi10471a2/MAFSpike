@@ -9,12 +9,7 @@
     <RootNamespace>CodexFileQuery</RootNamespace>
     <AssemblyName>CodexFileQuery</AssemblyName>
     <Title>Codex File Query</Title>
-    <Description>Query ChatGPT about local files using your Chrome browser</Description>
+    <Description>Open ChatGPT and copy file prompts to clipboard</Description>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Selenium.WebDriver" Version="4.25.0" />
-    <PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="131.0.6778.8500" />
-  </ItemGroup>
 
 </Project>

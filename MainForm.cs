@@ -1,14 +1,10 @@
+using System.Diagnostics;
 using System.Windows.Forms;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
 
 namespace CodexFileQuery;
 
 public partial class MainForm : Form
 {
-    private ChromeDriver? _driver;
-    private bool _isConnected;
-
     public MainForm()
     {
         InitializeComponent();
@@ -19,64 +15,59 @@ public partial class MainForm : Form
     {
         try
         {
-            if (_isConnected && _driver != null)
+            UpdateStatus("Launching Chrome with your profile...");
+            
+            // Find Chrome
+            string chromePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Google", "Chrome", "Application", "chrome.exe");
+            
+            if (!File.Exists(chromePath))
             {
-                _driver.Navigate().GoToUrl("https://chat.openai.com/");
-                UpdateStatus("ChatGPT refreshed");
-                return;
+                chromePath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder["ProgramFilesX86"]),
+                    "Google", "Chrome", "Application", "chrome.exe");
             }
 
-            UpdateStatus("Launching Chrome...");
-            btnConnect.Enabled = false;
-
-            var options = new ChromeOptions();
-            
-            // Use your existing Chrome profile
             string userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Google", "Chrome", "User Data");
-            
-            // Use default profile (or change to a specific profile directory)
-            options.AddArgument($"--user-data-dir={userDataDir}");
-            options.AddArgument("--profile-directory=Default");
-            options.AddArgument("--start-maximized");
-            options.AddArgument("--disable-blink-features=AutomationControlled");
-            
-            // Don't actually close Chrome if it's already running
-            options.AddAdditionalOption("detach", true);
 
+            var psi = new ProcessStartInfo
+            {
+                FileName = chromePath,
+                Arguments = $"--profile-directory=Default \"https://chat.openai.com/\"",
+                UseShellExecute = true
+            };
+
+            // Try to use existing profile (may fail if Chrome is running)
             try
             {
-                _driver = new ChromeDriver(options);
+                Process.Start(psi);
             }
             catch
             {
-                // Chrome might already be running - try without detach
-                options.AddArgument("--new-window");
-                _driver = new ChromeDriver(options);
+                // Chrome already running - just open new tab
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "https://chat.openai.com/",
+                    UseShellExecute = true
+                });
             }
 
-            _driver.Navigate().GoToUrl("https://chat.openai.com/");
-            
-            var result = MessageBox.Show(
-                "If Chrome asked you to sign in:\n\n" +
-                "1. Sign in to your account (including MFA)\n" +
+            UpdateStatus("Chrome opened! Log in if needed, then start a new chat.");
+            MessageBox.Show(
+                "Chrome should be open with ChatGPT.\n\n" +
+                "1. Log in if prompted (MFA works)\n" +
                 "2. Click 'New chat'\n" +
-                "3. Come back here and click 'Connect' again\n\n" +
-                "Click OK to continue.",
-                "Check Chrome",
-                MessageBoxButtons.OKCancel,
+                "3. Come back here and paste file path + question",
+                "ChatGPT Opened",
+                MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
-
-            _isConnected = true;
-            btnConnect.Text = "Refresh ChatGPT";
-            btnSend.Enabled = true;
-            UpdateStatus("Connected! Select files and click 'Upload & Ask'");
         }
         catch (Exception ex)
         {
             UpdateStatus($"Error: {ex.Message}");
-            btnConnect.Enabled = true;
             MessageBox.Show($"Failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -85,9 +76,9 @@ public partial class MainForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Select file to upload",
+            Title = "Select file",
             Multiselect = true,
-            Filter = "All files (*.*)|*.*|C# files (*.cs)|*.cs|Python files (*.py)|*.py"
+            Filter = "All files (*.*)|*.*|C# files (*.cs)|*.cs|Python (*.py)|*.py"
         };
 
         if (dialog.ShowDialog() == DialogResult.OK)
@@ -98,18 +89,12 @@ public partial class MainForm : Form
 
     private void BtnSend_Click(object sender, EventArgs e)
     {
-        if (_driver == null || !_isConnected)
-        {
-            MessageBox.Show("Click 'Open ChatGPT' first.", "Not Connected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
         var filePaths = txtFilePath.Text.Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Select(p => p.Trim()).Where(p => !string.IsNullOrEmpty(p)).ToList();
 
         if (filePaths.Count == 0)
         {
-            MessageBox.Show("Select at least one file.", "No File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Select a file first.", "No File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -120,82 +105,30 @@ public partial class MainForm : Form
             return;
         }
 
-        var question = txtQuestion.Text.Trim();
+        // Read file and copy to clipboard
+        string fileContent = File.ReadAllText(filePaths[0]);
+        string fileName = Path.GetFileName(filePaths[0]);
+        string question = txtQuestion.Text.Trim();
+        
         if (string.IsNullOrEmpty(question))
         {
-            question = "Analyze this code. Explain what it does and suggest improvements.";
+            question = "Analyze this code and suggest improvements.";
         }
 
-        UploadAndAsk(filePaths, question);
-    }
-
-    private void UploadAndAsk(List<string> filePaths, string question)
-    {
-        try
-        {
-            btnSend.Enabled = false;
-            UpdateStatus("Uploading files...");
-
-            // Find file input
-            var fileInput = _driver!.FindElement(By.CssSelector("input[type='file']"));
-            
-            // Upload files (Selenium can handle this)
-            if (filePaths.Count == 1)
-            {
-                fileInput.SendKeys(filePaths[0]);
-            }
-            else
-            {
-                // For multiple files, send them one at a time
-                foreach (var path in filePaths)
-                {
-                    fileInput.SendKeys(path + "\n");
-                    System.Threading.Thread.Sleep(500);
-                }
-            }
-
-            UpdateStatus("Waiting for upload...");
-            System.Threading.Thread.Sleep(3000);
-
-            UpdateStatus("Typing question...");
-            
-            // Find and fill textarea
-            var textarea = _driver.FindElement(By.CssSelector("textarea"));
-            textarea.Clear();
-            textarea.SendKeys(question);
-
-            UpdateStatus("Submitting...");
-            textarea.SendKeys(Keys.Return);
-
-            UpdateStatus("Waiting for response (10-30 seconds)...");
-            
-            // Wait for response
-            System.Threading.Thread.Sleep(15000);
-            
-            try
-            {
-                var response = _driver.FindElement(By.CssSelector(".markdown"));
-                var text = response.Text;
-                
-                txtResponse.Text = text;
-                UpdateStatus("Response received!");
-                Clipboard.SetText(text);
-            }
-            catch
-            {
-                txtResponse.Text = "Response not detected. Check browser.";
-                UpdateStatus("Check browser for response");
-            }
-        }
-        catch (Exception ex)
-        {
-            txtResponse.Text = $"Error: {ex.Message}";
-            UpdateStatus($"Error: {ex.Message}");
-        }
-        finally
-        {
-            btnSend.Enabled = _isConnected;
-        }
+        string prompt = $"Here's the file `{fileName}`:\n\n```\n{fileContent}\n```\n\n{question}";
+        
+        Clipboard.SetText(prompt);
+        
+        MessageBox.Show(
+            $"Prompt copied to clipboard!\n\n" +
+            "1. Switch to Chrome/ChatGPT\n" +
+            "2. Paste (Ctrl+V)\n" +
+            "3. Send",
+            "Ready to Paste",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+        
+        UpdateStatus("Prompt copied! Switch to Chrome and paste.");
     }
 
     private void UpdateStatus(string message)
@@ -203,17 +136,5 @@ public partial class MainForm : Form
         lblStatus.Text = message;
         lblStatus.Invalidate();
         lblStatus.Update();
-        Application.DoEvents();
-    }
-
-    private void BtnCancel_Click(object sender, EventArgs e)
-    {
-        UpdateStatus("Cancelled");
-    }
-
-    protected override void OnFormClosing(FormClosingEventArgs e)
-    {
-        base.OnFormClosing(e);
-        _driver?.Dispose();
     }
 }
