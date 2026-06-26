@@ -6,6 +6,7 @@ namespace CodexFileQuery;
 public partial class MainForm : Form
 {
     private readonly string _browserSessionPath;
+    private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
     private bool _isConnected;
@@ -47,9 +48,11 @@ public partial class MainForm : Form
 
             UpdateStatus("Launching browser...");
             
-            _context = await Chromium.LaunchPersistentContextAsync(
+            _playwright = await Playwright.CreateAsync();
+            
+            _context = await _playwright.chromium.LaunchPersistentContextAsync(
                 _browserSessionPath,
-                new PersistentBrowserContextOptions
+                new BrowserTypeLaunchPersistentContextOptions
                 {
                     Headless = false,
                     Args = new[] { "--disable-blink-features=AutomationControlled" }
@@ -72,7 +75,7 @@ public partial class MainForm : Form
         catch (PlaywrightException ex) when (ex.Message.Contains("browser"))
         {
             UpdateStatus("Installing Chromium (first time)...");
-            await Task.Run(() => Playwright.InstallAsync());
+            await _playwright!.InstallAsync();
             await ConnectToChatGPTAsync();
         }
         catch (Exception ex)
