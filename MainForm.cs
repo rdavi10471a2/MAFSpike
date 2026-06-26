@@ -50,7 +50,7 @@ public partial class MainForm : Form
             
             _playwright = await Playwright.CreateAsync();
             
-            _context = await _playwright.chromium.LaunchPersistentContextAsync(
+            _context = await _playwright.Chromium.LaunchPersistentContextAsync(
                 _browserSessionPath,
                 new BrowserTypeLaunchPersistentContextOptions
                 {
@@ -75,7 +75,7 @@ public partial class MainForm : Form
         catch (PlaywrightException ex) when (ex.Message.Contains("browser"))
         {
             UpdateStatus("Installing Chromium (first time)...");
-            await _playwright!.InstallAsync();
+            await Playwright.InstallAsync();
             await ConnectToChatGPTAsync();
         }
         catch (Exception ex)
