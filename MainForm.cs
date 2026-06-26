@@ -75,8 +75,15 @@ public partial class MainForm : Form
         catch (PlaywrightException ex) when (ex.Message.Contains("browser"))
         {
             UpdateStatus("Installing Chromium (first time)...");
-            await Playwright.InstallAsync();
-            await ConnectToChatGPTAsync();
+            MessageBox.Show(
+                "Chromium not found. Run this command first:\n\n" +
+                "dotnet tool install --global Microsoft.Playwright\n" +
+                "playwright install",
+                "Browser Not Found",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            btnConnect.Enabled = true;
+            UpdateStatus("Install Chromium first: playwright install");
         }
         catch (Exception ex)
         {
