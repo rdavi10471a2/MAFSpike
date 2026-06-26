@@ -18,15 +18,11 @@ public partial class MainForm : Form
             UpdateStatus("Launching Chrome with your profile...");
             
             // Find Chrome
-            string chromePath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                "Google", "Chrome", "Application", "chrome.exe");
+            string chromePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
             
             if (!File.Exists(chromePath))
             {
-                chromePath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder["ProgramFilesX86"]),
-                    "Google", "Chrome", "Application", "chrome.exe");
+                chromePath = @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe";
             }
 
             string userDataDir = Path.Combine(
