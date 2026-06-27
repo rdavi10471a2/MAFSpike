@@ -8,7 +8,6 @@ namespace CodexFileQuery;
 
 public partial class MainForm : Form
 {
-    private readonly HttpListener? _listener;
     private readonly string _port = "9222";
     private string? _wsUrl;
 
