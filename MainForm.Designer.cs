@@ -111,9 +111,9 @@ partial class MainForm
         this.txtFilePath.Dock = System.Windows.Forms.DockStyle.Fill;
         this.txtFilePath.Location = new System.Drawing.Point(10, 10);
         this.txtFilePath.Name = "txtFilePath";
-        this.txtFilePath.PlaceholderText = "Select a file to analyze...";
         this.txtFilePath.Size = new System.Drawing.Size(590, 23);
         this.txtFilePath.TabIndex = 0;
+        this.txtFilePath.Text = "C:\\VS Code Projects\\SchemaStudio\\Schema Studio\\Program.cs";
         // 
         // btnBrowseFile
         // 
@@ -150,9 +150,9 @@ partial class MainForm
         this.txtQuestion.Location = new System.Drawing.Point(10, 25);
         this.txtQuestion.Multiline = true;
         this.txtQuestion.Name = "txtQuestion";
-        this.txtQuestion.PlaceholderText = "What would you like to know about this file? Leave blank for auto-analysis.";
         this.txtQuestion.Size = new System.Drawing.Size(680, 45);
         this.txtQuestion.TabIndex = 1;
+        this.txtQuestion.Text = "Analyze this code. Explain what it does, identify any bugs, and suggest improvements.";
         // 
         // btnSend
         // 
