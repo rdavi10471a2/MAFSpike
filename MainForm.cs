@@ -8,57 +8,65 @@ namespace CodexFileQuery;
 
 public partial class MainForm : Form
 {
-    private readonly string _port = "9222";
     private string? _wsUrl;
+    private bool _isConnected;
 
     public MainForm()
     {
         InitializeComponent();
-        UpdateStatus("Ready");
+        UpdateStatus("Ready - Close Chrome first, then click Connect");
     }
 
     private async void BtnConnect_Click(object sender, EventArgs e)
     {
         try
         {
-            UpdateStatus("Launching Chrome with debugging...");
+            UpdateStatus("Starting Chrome with debugging...");
             btnConnect.Enabled = false;
             btnSend.Enabled = false;
+
+            // Kill any existing Chrome with debugging port
+            foreach (var p in Process.GetProcessesByName("chrome"))
+            {
+                try { p.Kill(); } catch { }
+            }
+            await Task.Delay(1000);
 
             // Find Chrome
             string chromePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
             if (!File.Exists(chromePath))
                 chromePath = @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe";
 
-            // Launch Chrome with remote debugging
-            var psi = new ProcessStartInfo
+            // Launch Chrome with remote debugging on specific port
+            Process.Start(new ProcessStartInfo
             {
                 FileName = chromePath,
-                Arguments = $"--remote-debugging-port={_port} --profile-directory=Default https://chat.openai.com/",
+                Arguments = "--remote-debugging-port=9222 --new-window https://chat.openai.com/",
                 UseShellExecute = true
-            };
+            });
 
-            Process.Start(psi);
-            await Task.Delay(3000);
+            UpdateStatus("Waiting for Chrome...");
+            await Task.Delay(4000);
 
-            // Get WebSocket URL
-            var client = new HttpClient();
-            var response = await client.GetStringAsync($"http://localhost:{_port}/json");
+            // Get WebSocket URL from Chrome
+            using var client = new HttpClient();
+            var response = await client.GetStringAsync("http://localhost:9222/json");
             var tabs = JsonDocument.Parse(response);
-            var firstTab = tabs.RootElement.EnumerateArray().FirstOrDefault();
             
-            if (firstTab.TryGetProperty("webSocketDebuggerUrl", out var wsUrl))
+            var firstTab = tabs.RootElement.EnumerateArray().FirstOrDefault();
+            if (firstTab.TryGetProperty("webSocketDebuggerUrl", out var wsUrlProp))
             {
-                _wsUrl = wsUrl.GetString();
+                _wsUrl = wsUrlProp.GetString();
                 _isConnected = true;
                 btnSend.Enabled = true;
-                UpdateStatus("Connected! Ready to send.");
-                MessageBox.Show("Chrome opened and connected!\n\nSelect a file and click Send.", "Connected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                UpdateStatus("Connected to Chrome!");
+                MessageBox.Show("Chrome opened!\n\nClick Send to upload file to ChatGPT.", "Connected", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
-                UpdateStatus("Could not connect to Chrome");
-                MessageBox.Show("Could not connect to Chrome debugging port.\n\nMake sure Chrome is closed, then try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                UpdateStatus("Failed to connect");
+                MessageBox.Show("Could not connect to Chrome debugging port.\n\nClose all Chrome windows and try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                btnConnect.Enabled = true;
             }
         }
         catch (Exception ex)
@@ -68,8 +76,6 @@ public partial class MainForm : Form
             btnConnect.Enabled = true;
         }
     }
-
-    private bool _isConnected;
 
     private void BtnBrowseFile_Click(object sender, EventArgs e)
     {
@@ -108,21 +114,14 @@ public partial class MainForm : Form
             string fileContent = File.ReadAllText(filePath);
             string fileName = Path.GetFileName(filePath);
             string question = string.IsNullOrWhiteSpace(txtQuestion.Text) 
-                ? "Analyze this code and suggest improvements." 
+                ? "Analyze this code." 
                 : txtQuestion.Text.Trim();
 
-            string prompt = $"File `{fileName}`:\n\n```{fileContent}\n```\n\n{question}";
+            string prompt = $"```{fileName}\n{fileContent}\n```\n\n{question}";
 
             UpdateStatus("Sending to ChatGPT...");
-
             await SendToChatGPT(prompt);
-
-            UpdateStatus("Sent! Waiting for response...");
-            
-            // Give time for response
-            await Task.Delay(10000);
-            
-            UpdateStatus("Done! Check ChatGPT for response.");
+            UpdateStatus("Sent! Check ChatGPT for response.");
         }
         catch (Exception ex)
         {
@@ -140,59 +139,22 @@ public partial class MainForm : Form
         using var ws = new ClientWebSocket();
         await ws.ConnectAsync(new Uri(_wsUrl!), CancellationToken.None);
 
-        // Get page info
-        var infoCmd = CreateCdpCommand(1, "Page.getResourceTree");
-        await ws.SendAsync(Encoding.UTF8.GetBytes(infoCmd), WebSocketMessageType.Text, true, CancellationToken.None);
+        // Inject the text into textarea
+        string escaped = text.Replace("`", "\\`").Replace("\n", "\\n").Replace("'", "\\'");
+        string js = $"document.querySelector('textarea').value = `{escaped}`; document.querySelector('textarea').dispatchEvent(new Event('input', {{bubbles:true}}));";
+        
+        var cmd = JsonSerializer.Serialize(new { id = 1, method = "Runtime.evaluate", @params = new { expression = js } });
+        await ws.SendAsync(Encoding.UTF8.GetBytes(cmd), WebSocketMessageType.Text, true, CancellationToken.None);
         
         await Task.Delay(500);
         
-        // Focus textarea and type
-        var typeCmd = CreateCdpCommand(2, "Runtime.evaluate", 
-            new { expression = @"
-                (function() {
-                    // Try to find textarea
-                    let ta = document.querySelector('textarea');
-                    if (!ta) {
-                        // Try contenteditable
-                        ta = document.querySelector('[contenteditable=""true""]');
-                    }
-                    if (ta) {
-                        ta.focus();
-                        ta.value = arguments[0];
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
-                        return 'found';
-                    }
-                    return 'not found';
-                })('" + text.Replace("'", "\\'").Replace("\n", "\\n") + @"')
-            " });
-        await ws.SendAsync(Encoding.UTF8.GetBytes(typeCmd), WebSocketMessageType.Text, true, CancellationToken.None);
+        // Press Enter
+        string enterJs = "document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', code:'Enter', keyCode:13, bubbles:true}));";
+        var enterCmd = JsonSerializer.Serialize(new { id = 2, method = "Runtime.evaluate", @params = new { expression = enterJs } });
+        await ws.SendAsync(Encoding.UTF8.GetBytes(enterCmd), WebSocketMessageType.Text, true, CancellationToken.None);
         
         await Task.Delay(1000);
-        
-        // Press Enter to send
-        var enterCmd = CreateCdpCommand(3, "Runtime.evaluate",
-            new { expression = @"
-                (function() {
-                    let ta = document.querySelector('textarea');
-                    if (!ta) ta = document.querySelector('[contenteditable=""true""]');
-                    if (ta) {
-                        ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-                        ta.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-                        return 'sent';
-                    }
-                    return 'failed';
-                })()
-            " });
-        await ws.SendAsync(Encoding.UTF8.GetBytes(enterCmd), WebSocketMessageType.Text, true, CancellationToken.None);
-
-        await Task.Delay(500);
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
-    }
-
-    private string CreateCdpCommand(int id, string method, object? args = null)
-    {
-        var cmd = new { id, method, @params = args ?? new { } };
-        return JsonSerializer.Serialize(cmd);
     }
 
     private void UpdateStatus(string message)
